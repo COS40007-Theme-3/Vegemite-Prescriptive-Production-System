@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Vegemite brand palette: #1F1508 #000100 #FF2019 #FFEA17 #FFFFFF */
+@layer base {
+  :root {
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 30 59% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 59% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 59% 8%;
+    --primary: 2 100% 55%;
+    /* #FF2019 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 54 100% 55%;
+    /* #FFEA17 */
+    --secondary-foreground: 30 59% 10%;
+    --muted: 30 15% 95%;
+    --muted-foreground: 30 25% 40%;
+    --accent: 54 100% 55%;
+    /* #FFEA17 */
+    --accent-foreground: 30 59% 10%;
+    --destructive: 2 100% 55%;
+    /* #FF2019 */
+    --destructive-foreground: 0 0% 100%;
+    --warning: 54 100% 55%;
+    /* #FFEA17 */
+    --warning-foreground: 30 59% 10%;
+    --alert: 2 100% 50%;
+    --alert-foreground: 0 0% 100%;
+    --border: 30 20% 90%;
+    --input: 30 20% 90%;
+    --ring: 2 100% 55%;
+    /* #FF2019 */
+    --chart-1: 2 100% 55%;
+    /* #FF2019 */
+    --chart-2: 54 100% 55%;
+    /* #FFEA17 */
+    --chart-3: 30 59% 8%;
+    --chart-4: 30 30% 45%;
+    --chart-5: 30 20% 65%;
+    --radius: 0.5rem;
+    /* Sidebar — neutral gray */
+    --sidebar-background: 0 0% 96%;
+    --sidebar-foreground: 0 0% 15%;
+    --sidebar-primary: 0 0% 25%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 91%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 88%;
+    --sidebar-ring: 0 0% 70%;
+  }
+
+  .dark {
+    /* Dark theme */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 2 100% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 55 100% 55%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 2 100% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 55 100% 55%;
+    --warning-foreground: 0 0% 0%;
+    --alert: 2 100% 55%;
+    --alert-foreground: 0 0% 100%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 2 100% 55%;
+    --chart-1: 2 100% 55%;
+    --chart-2: 55 100% 55%;
+    --chart-3: 0 0% 100%;
+    --chart-4: 0 0% 70%;
+    --chart-5: 0 0% 50%;
+    /* Sidebar — neutral gray (dark) */
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 0 0% 75%;
+    --sidebar-primary-foreground: 0 0% 9%;
+    --sidebar-accent: 0 0% 14%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 0 0% 35%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground text-base;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight font-semibold;
+  }
+}

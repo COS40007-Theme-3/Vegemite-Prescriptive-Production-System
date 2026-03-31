@@ -27,8 +27,10 @@ const SP_KEYS: SPKey[] = [
 ]
 
 type InferenceResult = RecommendSpResult & {
-  prediction: 'GOOD' | 'LOW_BAD' | 'HIGH_BAD'
+  prediction: string
   downtimeRisk: number
+  rootCause?: string[]
+  isoAnomaly?: boolean
   recommendedPGood: number
   recommendedPDowntime: number
 }
@@ -190,6 +192,8 @@ export default function DashboardPage() {
               prediction={result?.prediction ?? 'GOOD'}
               confidence={result?.pGood ?? 0}
               downtimeRisk={result ? Math.round(result.downtimeRisk) : 0}
+              rootCause={result?.rootCause}
+              isoAnomaly={result?.isoAnomaly}
               loading={!initialized}
             />
           </div>

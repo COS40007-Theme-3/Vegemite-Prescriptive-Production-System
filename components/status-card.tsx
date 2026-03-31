@@ -3,16 +3,18 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 
 interface StatusCardProps {
-  prediction: 'GOOD' | 'LOW_BAD' | 'HIGH_BAD'
+  prediction: string
   confidence: number
   downtimeRisk: number
+  rootCause?: string[]
+  isoAnomaly?: boolean
   loading?: boolean
 }
 
-const PREDICTION_CONFIG = {
+const PREDICTION_CONFIG: Record<string, { label: string, variant: 'default' | 'secondary' | 'destructive' | 'outline', numClass: string, barClass: string, desc: string }> = {
   GOOD: {
     label: 'Good',
-    variant: 'default' as const,
+    variant: 'default',
     // Use theme foreground (dark brown) for "good" — neutral, on-brand
     numClass: 'text-foreground',
     barClass: 'bg-foreground',
@@ -20,7 +22,7 @@ const PREDICTION_CONFIG = {
   },
   LOW_BAD: {
     label: 'Low Bad',
-    variant: 'secondary' as const,
+    variant: 'secondary',
     // Bright orange — distinct from red, visible in both themes
     numClass: 'text-orange-500',
     barClass: 'bg-orange-500',
@@ -28,28 +30,55 @@ const PREDICTION_CONFIG = {
   },
   HIGH_BAD: {
     label: 'High Bad',
-    variant: 'destructive' as const,
+    variant: 'destructive',
     // Theme primary = Vegemite red
     numClass: 'text-primary',
     barClass: 'bg-primary',
     desc: 'Product solids above target. Reduce TFE out-flow or lower steam pressure SP.',
   },
+  UNKNOWN: {
+    label: 'Unknown',
+    variant: 'outline',
+    numClass: 'text-muted-foreground',
+    barClass: 'bg-muted-foreground',
+    desc: 'Status unknown. Prediction may be initializing or missing model info.',
+  },
+  ERROR: {
+    label: 'Error',
+    variant: 'destructive',
+    numClass: 'text-destructive',
+    barClass: 'bg-destructive',
+    desc: 'An error occurred during prediction.',
+  },
 }
 
-function getRiskConfig(risk: number) {
+function getRiskConfig(risk: number, rootCause?: string[], isoAnomaly?: boolean) {
+  let extraDesc = ''
+  
+  if (rootCause && rootCause.length > 0) {
+    const activeCauses = rootCause.filter(c => c !== 'Normal' && c !== 'Unknown')
+    if (activeCauses.length > 0) {
+      extraDesc = ` Root Cause: ${activeCauses.map(c => c.replace(/_/g, ' ')).join(' | ')}.`
+    }
+  }
+
+  if (isoAnomaly) {
+    extraDesc += ' System detected anomalous operating conditions.'
+  }
+
   if (risk >= 50) return {
     numClass: 'text-primary',
     barClass: 'bg-primary',
     badge: 'destructive' as const,
     label: 'High',
-    desc: 'Unplanned stoppage likely. Check evaporator train and separator status immediately.',
+    desc: `Unplanned stoppage likely. Check evaporator train and separator status immediately.${extraDesc}`,
   }
   if (risk >= 25) return {
     numClass: 'text-orange-500',
     barClass: 'bg-orange-500',
     badge: 'secondary' as const,
     label: 'Moderate',
-    desc: 'Elevated risk. Monitor TFE vacuum pressure and motor current closely.',
+    desc: `Elevated risk. Monitor TFE vacuum pressure and motor current closely.${extraDesc}`,
   }
   return {
     numClass: 'text-foreground',
@@ -60,9 +89,9 @@ function getRiskConfig(risk: number) {
   }
 }
 
-export function StatusCard({ prediction, confidence, downtimeRisk, loading }: StatusCardProps) {
-  const cfg = PREDICTION_CONFIG[prediction]
-  const risk = getRiskConfig(downtimeRisk)
+export function StatusCard({ prediction, confidence, downtimeRisk, rootCause, isoAnomaly, loading }: StatusCardProps) {
+  const cfg = PREDICTION_CONFIG[prediction] || PREDICTION_CONFIG.UNKNOWN
+  const risk = getRiskConfig(downtimeRisk, rootCause, isoAnomaly)
 
   return (
     <Card className="flex h-full flex-col">
@@ -115,8 +144,13 @@ export function StatusCard({ prediction, confidence, downtimeRisk, loading }: St
 
             {/* ── Downtime Risk ── */}
             <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Downtime Risk
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex justify-between">
+                <span>Downtime Risk</span>
+                {rootCause && rootCause.filter(c => c !== 'Normal').length > 0 && (
+                  <span className="text-destructive animate-pulse font-bold text-right text-[10px] break-words max-w-[60%]">
+                    ⚠️ {rootCause.filter(c => c !== 'Normal').map(c => c.replace(/_/g, ' ')).join(' | ')}
+                  </span>
+                )}
               </p>
               <div className="flex items-end gap-1.5">
                 <span className={`text-4xl font-extrabold tabular-nums leading-none ${risk.numClass}`}>

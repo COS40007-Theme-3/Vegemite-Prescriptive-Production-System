@@ -31,6 +31,8 @@ export type RecommendSpResponse = {
   pDowntime: number
   prediction: 'GOOD' | 'LOW_BAD' | 'HIGH_BAD'
   downtimeRisk: number
+  rootCause?: string[]
+  isoAnomaly?: boolean
   recommendedPGood: number
   recommendedPDowntime: number
 }

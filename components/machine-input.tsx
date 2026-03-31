@@ -33,14 +33,14 @@ export type RecommendSpResult = {
   pDowntime: number
 }
 
-interface MachineInputProps {
+export interface MachineInputProps {
   inputs: AllSPInputs
-  setInputs?: (inputs: AllSPInputs) => void
-  isManualMode?: boolean
-  onToggleManual?: () => void
-  onApplyRecommended?: () => void
-  hasRecommendation?: boolean
-  currentState?: 'GOOD' | 'LOW_BAD' | 'HIGH_BAD'
+  setInputs: (inputs: AllSPInputs) => void
+  isManualMode: boolean
+  onToggleManual: () => void
+  onApplyRecommended: () => void
+  hasRecommendation: boolean
+  currentState?: string
   loading?: boolean
   hidePart?: boolean
 }
@@ -57,10 +57,12 @@ const FIELDS: { key: keyof Omit<AllSPInputs, 'part'>; label: string; unit: strin
   { key: 'tfeSteamPressureSP',     label: 'TFE Steam Pressure SP',     unit: 'kPa' },
 ]
 
-const STATE_CONFIG = {
-  GOOD:     { label: 'Good',     variant: 'default'     as const, dot: 'bg-emerald-500' },
-  LOW_BAD:  { label: 'Low Bad',  variant: 'secondary'   as const, dot: 'bg-amber-400' },
-  HIGH_BAD: { label: 'High Bad', variant: 'destructive' as const, dot: 'bg-red-500' },
+const STATE_CONFIG: Record<string, { label: string, variant: 'default' | 'secondary' | 'destructive' | 'outline', dot: string }> = {
+  GOOD:     { label: 'Good',     variant: 'default',     dot: 'bg-emerald-500' },
+  LOW_BAD:  { label: 'Low Bad',  variant: 'secondary',   dot: 'bg-amber-400' },
+  HIGH_BAD: { label: 'High Bad', variant: 'destructive', dot: 'bg-red-500' },
+  UNKNOWN:  { label: 'Unknown',  variant: 'outline',     dot: 'bg-muted-foreground' },
+  ERROR:    { label: 'Error',    variant: 'destructive', dot: 'bg-destructive' },
 }
 
 export function MachineInput({
@@ -117,7 +119,7 @@ export function MachineInput({
     if (onToggleManual) onToggleManual()
   }
 
-  const stateConfig = currentState ? STATE_CONFIG[currentState] : null
+  const stateConfig = currentState ? (STATE_CONFIG[currentState] || STATE_CONFIG.UNKNOWN) : null
 
   return (
     <Card className="flex h-full flex-col">

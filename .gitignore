@@ -10,3 +10,7 @@ node_modules/
 .DS_Store
 
 /tmp
+
+# Logs
+data/prediction_logs.csv
+data/sensor_buffer.json

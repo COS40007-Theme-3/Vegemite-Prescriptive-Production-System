@@ -8,12 +8,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="flex h-dvh flex-col overflow-hidden">
+      <SidebarInset>
         <Header />
-        <div className="flex-1 overflow-auto min-h-0">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {children}
-        </div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   )
 }
+

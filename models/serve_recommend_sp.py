@@ -1,6 +1,6 @@
 
 """
-Production Serving Script – Advanced Revision
+Production Serving Script - Advanced Revision
 Backend logic for the Vegemite Prescriptive Production System.
 
 Features:
@@ -23,6 +23,7 @@ import pandas as pd
 import joblib
 
 class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON Encoder that converts NumPy data types to native Python types for JSON serialization."""
     def default(self, obj):
         if isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
             return float(obj)
@@ -42,17 +43,23 @@ CONFIG_DIR = BASE_DIR / "models" / "config"
 BUFFER_FILE = BASE_DIR / "data" / "sensor_buffer.json"
 MAX_BUFFER_SIZE = 15
 
+"""
+Cross-reference mapping: Maps clean UI sensor names into exactly what the models were trained on.
+"""
 FRIENDLY_TO_TAG_MAP = {
     "FFTE_Steam_pressure_PV": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Steam_Pressure",
+    "FFTE_Steam_pressure_SP": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Steam_Setpoint",
     "FFTE_Heat_temperature_1": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Pre_Heat_Temperature1_Deg_C_",
     "FFTE_Heat_temperature_2": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Pre_Heat_Temperature2_Deg_C_",
     "FFTE_Heat_temperature_3": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Pre_Heat_Temperature3_Deg_C_",
     "TFE_Product_out_temperature": "Port_Melbourne_RSLinx_Enterprise_Veg_B_SQL_FFTE_Post_Heat_Temperature_Deg_C_",
-    "Extract_tank_Level": "VEG_B_HMI_VELC1060_PV_",
-    "TFE_Tank_level": "VEG_B_HMI_VELC1662_PV_",
-    "TFE_Level": "VEG_C_VMLT2007_",
+    "Extract_tank_Level": "Extract_tank_Level_PV",
+    "TFE_Tank_level": "TFE_Tank_level_PV",
+    "TFE_Level": "TFE_Level_PV",
     "TFE_Vacuum_pressure_PV": "VEG_B_HMI_VEDC1266_PV_",
-    "TFE_Out_flow_SP": "VEG_B_HMI_VEDC1664_SP_"
+    "TFE_Vacuum_pressure_SP": "VEG_B_HMI_VEDC1266_SP_",
+    "TFE_Out_flow_SP": "VEG_B_HMI_VEDC1664_SP_",
+    "TFE_Out_flow_PV": "VEG_B_HMI_VELC1560_PV_"
 }
 
 class FeatureEngineer:
@@ -60,6 +67,10 @@ class FeatureEngineer:
     
     @staticmethod
     def update_and_get_buffer(row_dict_clean):
+        """
+        Appends the latest sensor readings to the rolling buffer.
+        Maintains a maximum buffer size and writes the state to disk.
+        """
         buffer = []
         if BUFFER_FILE.exists():
             try:
@@ -82,6 +93,10 @@ class FeatureEngineer:
 
     @staticmethod
     def compute_for_buffer(buffer_df, features_list):
+        """
+        Calculates time-series features (mean, std, min, max, delta, lag) 
+        over the rolling buffer for the strictly requested features.
+        """
         out = {}
         last_row = buffer_df.iloc[-1].to_dict()
         first_row = buffer_df.iloc[0].to_dict()
@@ -153,6 +168,10 @@ UI_TO_SP = {
 }
 
 class VegemiteServer:
+    """
+    Manages the loading and serving of Machine Learning models.
+    Handles both Quality Prediction (Task 1) and Downtime Alert/Root Cause (Task 2).
+    """
     def __init__(self):
         self.m1_classifiers = {}
         self.m1_recommenders = {}
@@ -228,20 +247,22 @@ class VegemiteServer:
                     self.m2_stage2_encoders[machine] = joblib.load(s2_enc_path)
 
             sys.stderr.write(f"Server successfully initialized from {MODELS_DIR}\n")
-            sys.stderr.write(f"✅ Loaded {len(self.m1_classifiers)} Classifiers\n")
-            sys.stderr.write(f"✅ Loaded {len(self.m1_recommenders)} Recommenders\n")
-            sys.stderr.write(f"✅ Task 2 Model Status: Loaded {len(self.m2_lgbs)} machines\n")
+            sys.stderr.write(f" Loaded {len(self.m1_classifiers)} Classifiers\n")
+            sys.stderr.write(f" Loaded {len(self.m1_recommenders)} Recommenders\n")
+            sys.stderr.write(f" Task 2 Model Status: Loaded {len(self.m2_lgbs)} machines\n")
         except Exception as e:
             sys.stderr.write(f"Initialization error: {e}\n")
 
     def get_model1(self, part):
+        """Retrieves the Quality Classifier model for a specific product part."""
         return self.m1_classifiers.get(part)
         
     def get_recommender1(self, part):
+        """Retrieves the Prescriptive Recommender model for a specific product part."""
         return self.m1_recommenders.get(part)
 
-    def optimize_sp(self, buffer_df, part, p_good_curr):
-        """Prescriptive Engine với Dynamic Bounds & Safety Protocols."""
+    def optimize_sp(self, buffer_df, part, p_good_curr, p_dt_curr):
+        """Prescriptive Engine with Dynamic Bounds & Safety Protocols."""
         model_clf = self.get_model1(part)
         model_rec = self.get_recommender1(part)
         
@@ -251,39 +272,42 @@ class VegemiteServer:
         feature_not_sp = self.task1_feature_not_sp.get(safe_part, [])
         sp_cols = self.task1_sp_cols.get(safe_part, [])
         
-        # Default SP giữ nguyên hiện trạng
+        # Keep default SP state
         default_rec = {ui: float(clean_row.get(re.sub(r'[^A-Za-z0-9_]+', '_', canon), 0.0)) for ui, canon in UI_TO_SP.items()}
         
-        # 1. CHỐT CHẶN AN TOÀN 1: "Don't fix what ain't broke"
-        # Nếu mẻ đang có xác suất Good >= 85%, tuyệt đối không can thiệp để tránh làm hỏng mẻ
-        if p_good_curr >= 0.85:
-            return default_rec, p_good_curr, 0.0, False
+        # =================================================================
+        #  SAFETY PROTOCOL 1: "Don't fix what ain't broke"
+        #  Only bypass intervention if the batch is Good (>= 85%) AND the Machine is Safe (< 20%)
+        # =================================================================
+        if p_good_curr >= 0.85 and p_dt_curr < 0.20:
+            return default_rec, p_good_curr, p_dt_curr, False
 
         if not model_clf or not t1_feats or not model_rec or not feature_not_sp:
-            return default_rec, p_good_curr, 0.0, False
+            return default_rec, p_good_curr, p_dt_curr, False
 
-        # Tạo vector đầu vào cho Recommender
+        # Create input vector for Recommender
         curr_buffer_calc = FeatureEngineer.compute_for_buffer(buffer_df, feature_not_sp)
         raw_rec_sp_values = model_rec.predict(curr_buffer_calc)[0]
         
         # =================================================================
-        # 🚀 CHỐT CHẶN 2: DYNAMIC BOUNDS (Biên độ động theo "độ nguy kịch")
+        #  SAFETY PROTOCOL 2: DYNAMIC BOUNDS (Risk-based margins)
         # =================================================================
-        if p_good_curr < 0.15:
-            base_deviation = 0.15  # Mẻ sắp hỏng nặng -> AI được phép "đánh liều" vặn tới 15%
-        elif p_good_curr < 0.40:
-            base_deviation = 0.10  # Mẻ đang có vấn đề -> Nới lỏng 10%
+        # If machine is at high risk of failure (>= 80%) or batch is severely degrading, allow wider limits
+        if p_dt_curr >= 0.80 or p_good_curr < 0.15:
+            base_deviation = 0.15  # High risk -> AI allowed to intervene up to 15%
+        elif p_good_curr < 0.40 or p_dt_curr >= 0.40:
+            base_deviation = 0.10  # Medium risk -> Release bound to 10%
         else:
-            base_deviation = 0.05  # Mẻ hơi lệch chuẩn -> Siết chặt an toàn 5%
+            base_deviation = 0.05  # Slight deviation -> Tighten safety bound to 5%
 
         best_cand = clean_row.copy()
-        requires_manual_review = False # Cờ báo hiệu cho UI
+        requires_manual_review = False # UI flag for manual review
         
         for idx, sp_col in enumerate(sp_cols):
             orig_val = float(clean_row.get(sp_col, 0.0))
             new_val = raw_rec_sp_values[idx]
             
-            # 🚀 CHỐT CHẶN 3: SENSOR-SPECIFIC RULES (Quy tắc vật lý)
+            #  SAFETY PROTOCOL 3: SENSOR-SPECIFIC RULES (Physics-based)
             col_lower = sp_col.lower()
             if "temperature" in col_lower or "heat" in col_lower:
                 allowed_dev = min(base_deviation, 0.05) 
@@ -292,30 +316,30 @@ class VegemiteServer:
                 allowed_dev = min(base_deviation * 1.5, 0.20)
                 margin = max(np.abs(orig_val) * allowed_dev, 1.0)
             elif "vacuum" in col_lower:
-                # FIX: Vacuum Pressure dao động dải rộng (âm sang dương)
-                # Cho phép AI giật van một lực cực lớn (hard margin = 40.0) để cứu máy
+                # FIX: Vacuum Pressure fluctuates in wide range (negative to positive)
+                # Allow AI to adjust valve with extreme force (hard margin = 40.0) to rescue machine
                 allowed_dev = base_deviation * 2.0
                 margin = max(np.abs(orig_val) * allowed_dev, 40.0) 
             elif "pressure" in col_lower:
-                # Áp suất dương bình thường (như Steam Pressure) thì giữ mức biên độ vừa phải
+                # Normal positive pressure (like Steam Pressure) keeps moderate margin
                 allowed_dev = base_deviation
                 margin = max(np.abs(orig_val) * allowed_dev, 10.0)
             else:
                 allowed_dev = base_deviation
                 margin = max(np.abs(orig_val) * allowed_dev, 0.5)
             
-            # Cắt gọt giá trị an toàn
+            # Clip values to safety bounds
             bound_lower = orig_val - margin
             bound_upper = orig_val + margin
             safe_val = np.clip(new_val, bound_lower, bound_upper)
             
-            # Nếu AI quyết định vặn quá 10% so với ban đầu, bật cờ Review cho kỹ sư
+            # If AI adjusts beyond 10% compared to initial, flag for Engineer Review
             if np.abs(safe_val - orig_val) > (np.abs(orig_val) * 0.10) and np.abs(safe_val - orig_val) > 1.0:
                 requires_manual_review = True
                 
             best_cand[sp_col] = safe_val
             
-        # Mô phỏng lại xác suất Good sau khi vặn van an toàn
+        # Simulate Good probability again after safe valve adjustments
         cand_buffer_df = buffer_df.copy()
         for k, v in best_cand.items():
             cand_buffer_df.loc[cand_buffer_df.index[-1], k] = v
@@ -324,10 +348,10 @@ class VegemiteServer:
         p_vec = model_clf.predict_proba(X_t1)[0]
         best_pg = float(p_vec[0])
         
-        # Mô phỏng lại rủi ro Downtime (Task 2)
+        # Simulate Downtime risk (Task 2)
         best_pdt = 0.0
         if self.m2_lgbs and self.task2_features:
-            # Tái tạo lại SP_PV conflicts
+            # Recreate SP_PV conflicts
             pv_cols = [c for c in cand_buffer_df.columns if 'PV' in c]
             for pv_col in pv_cols:
                 sp_col = pv_col.replace('PV', 'SP')
@@ -338,7 +362,7 @@ class VegemiteServer:
                     cand_buffer_df[err_col] = pv_val - sp_val
                     cand_buffer_df[f'{err_col}_volatility'] = cand_buffer_df[err_col].rolling(window=15, min_periods=1).std().fillna(0)
                 lag5_col = f"{pv_col}_lag5"
-                cand_buffer_df[lag5_col] = cand_buffer_df[pv_col].shift(5).bfill()
+                cand_buffer_df[lag5_col] = cand_buffer_df[pv_col].shift(5).bfill().fillna(cand_buffer_df[pv_col])
 
             for machine in self.m2_lgbs.keys():
                 config = self.task2_features.get(machine, {})
@@ -365,7 +389,7 @@ class VegemiteServer:
                 if risk > best_pdt:
                     best_pdt = risk
                 
-        # Format trả về UI
+        # Format response for UI
         rec_sp = {}
         for ui, canonical in UI_TO_SP.items():
             clean_col = re.sub(r'[^A-Za-z0-9_]+', '_', canonical)
@@ -375,6 +399,12 @@ class VegemiteServer:
 
 
 def main():
+    """
+    Main execution entry point.
+    Reads JSON from standard input, processes sensor data through Digital Twin simulation,
+    evaluates quality and downtime risks, runs the prescriptive optimizer, 
+    and outputs the result as a JSON string to standard output.
+    """
     server = VegemiteServer()
     
     # Read input from stdin
@@ -408,7 +438,7 @@ def main():
             clean_row[clean_k] = v
 
         # =============================================================
-        # 🤖 BẢN SAO SỐ (DIGITAL TWIN SIMULATION - FOR DEMO PHASE 2)
+        #  DIGITAL TWIN SIMULATION - FOR DEMO PHASE 2
         # =============================================================
         try:
             prev_buffer = []
@@ -422,53 +452,80 @@ def main():
                 ("TFE_Vacuum_pressure_SP", "TFE_Vacuum_pressure_PV"),
                 ("FFTE_Steam_pressure_SP", "FFTE_Steam_pressure_PV"),
                 ("TFE_Out_flow_SP", "TFE_Out_flow_PV"),
-                ("TFE_Production_solids_SP", "TFE_Production_solids_PV")
+                ("TFE_Production_solids_SP", "TFE_Production_solids_PV"),
+                ("FFTE_Feed_solids_SP", "FFTE_Feed_solids_PV"),
+                ("FFTE_Production_solids_SP", "FFTE_Production_solids_PV"),
+                ("TFE_Steam_pressure_SP", "TFE_Steam_pressure_PV")
             ]
             
             for sp_col, pv_col in twin_pairs:
-                # SỬA LỖI 1: Chỉ cần kiểm tra xem UI có gửi SP lên không
                 if sp_col in clean_row:
                     target_sp = float(clean_row[sp_col])
                     last_pv = float(last_state.get(pv_col, target_sp))
                     
                     diff = target_sp - last_pv
                     
-                    # SỬA LỖI BƠM CHAOS (Tự động nhận diện lỗi vật lý)
                     RESPONSE_RATE = 0.35
                     step = diff * RESPONSE_RATE
-                    jitter = random.uniform(-1.5, 1.5) # Rung lắc bình thường
+                    jitter = random.uniform(-1.5, 1.5)
                     
-                    # Bơm hỗn loạn (Chaos) có định hướng vật lý
                     if pv_col == "FFTE_Steam_pressure_PV" and target_sp >= 145.0:
-                        # Áp suất quá cao -> Van không đóng được -> PV bị dội ngược lên trên SP
                         jitter = random.uniform(25.0, 50.0) 
-                        
                     elif pv_col == "TFE_Out_flow_PV" and target_sp <= 1500.0:
-                        # Máy bơm bị nghẹt -> Lưu lượng thực tế (PV) không thể xuống thấp như SP
-                        # Ép PV luôn cao hơn SP ít nhất 600 đến 800 đơn vị (Không bao giờ về 0)
                         jitter = random.uniform(600.0, 800.0) 
-                        
                     elif pv_col == "TFE_Vacuum_pressure_PV" and target_sp >= -20.0:
-                        # Hở chân không -> Áp suất bị xả thẳng về áp suất khí quyển (gần 0)
                         jitter = random.uniform(15.0, 30.0)
                         
                     simulated_pv = last_pv + step + jitter
                     clean_row[pv_col] = round(simulated_pv, 2)
             
-            # SỬA LỖI 2: Phục hồi các Cảm biến tĩnh (Rất quan trọng cho IF)
+            """
+            FIX 2: Supplement ALL static sensors to prevent them dropping to 0.0
+            """
             static_pvs = {
-                "Extract_tank_Level": 65.0,
                 "TFE_Tank_level": 70.0,
                 "TFE_Level": 50.0,
                 "FFTE_Heat_temperature_1": 80.0,
                 "FFTE_Heat_temperature_2": 82.0,
                 "FFTE_Heat_temperature_3": 81.0,
-                "TFE_Product_out_temperature": 68.0
+                "TFE_Product_out_temperature": 68.0,
+                "FFTE_Discharge_density": 1.26,
+                "FFTE_Discharge_solids": 49.71,
+                "FFTE_Feed_flow_rate_PV": 9286.64,
+                "TFE_Input_flow_PV": 1603.76,
+                "TFE_Motor_current": 24.9,
+                "TFE_Motor_speed": 80.0,
+                "TFE_Production_solids_density": 0.93,
+                "TFE_Steam_temperature": 62.29,
+                "TFE_Temperature": 64.0
             }
             for stat_col, base_val in static_pvs.items():
                 if stat_col not in clean_row:
                     old_stat = float(last_state.get(stat_col, base_val))
-                    clean_row[stat_col] = round(old_stat + random.uniform(-0.5, 0.5), 2)
+                    """
+                    Mean Reversion Force: Eliminate random walk drift effect.
+                    """
+                    pull_to_base = (base_val - old_stat) * 0.1 
+                    clean_row[stat_col] = round(old_stat + pull_to_base, 2)
+                    
+            """
+            Extract Tank Level Custom Physics: Revert to equilibrium.
+            To prevent the stream from injecting noisy fluctuations (e.g., dropping to 30-40%),
+            we enforce a Mean Reversion towards a secure ~65.0 baseline.
+            If the incoming value indicates an explicit anomaly test (e.g., > 85.0 or < 20.0),
+            we will honor the testing condition instead.
+            """
+            old_extract = float(last_state.get("Extract_tank_Level", 65.0))
+            current = float(clean_row.get("Extract_tank_Level", old_extract))
+
+            if current > 85.0 or current < 20.0:
+                clean_row["Extract_tank_Level"] = current
+            else:
+                if old_extract > 65.0:
+                    new_extract = old_extract - 2.0
+                else:
+                    new_extract = old_extract + (65.0 - old_extract) * 0.1
+                clean_row["Extract_tank_Level"] = round(new_extract + random.uniform(-0.5, 0.5), 2)
                     
         except Exception as e:
             sys.stderr.write(f"Digital Twin Simulation Warning: {e}\n")
@@ -495,7 +552,7 @@ def main():
             p_low = float(p_vec[1]) if len(p_vec) > 1 else 0.0
             p_high = float(p_vec[2]) if len(p_vec) > 2 else 0.0
             
-            # Lỗi số 3: Logic bảo vệ Threshold để bắt chuẩn Low_Bad vs High_Bad
+            # Error 3: Safe Threshold logic to accurately catch Low_Bad vs High_Bad
             if p_low > 0.20 and p_low >= (p_high * 0.5):
                 pred_label = "LOW_BAD"
             elif p_high > p_low and p_high > p_good:
@@ -520,34 +577,38 @@ def main():
 
         if server.m2_lgbs and server.m2_isos and server.m2_scalers and server.task2_features:
             
-            # 1. ĐỒNG BỘ TÊN CỘT (Từ tên ngắn của UI sang tên Dài của Model)
+            # 1. SYNC COLUMN NAMES (From short UI names to model canonical names)
             buffer_df_t2 = buffer_df.copy()
             for friendly, tag in FRIENDLY_TO_TAG_MAP.items():
                 clean_tag = re.sub(r'[^A-Za-z0-9_]+', '_', tag)
                 if friendly in buffer_df_t2.columns:
                     buffer_df_t2[clean_tag] = buffer_df_t2[friendly]
+            
+            # Fill missing SPs dynamically based on their PV equivalents if SP does not exist
+            if "Extract_tank_Level_PV" in buffer_df_t2.columns and "Extract_tank_Level_SP" not in buffer_df_t2.columns:
+                buffer_df_t2["Extract_tank_Level_SP"] = buffer_df_t2["Extract_tank_Level_PV"]
 
             # ---------------------------------------------------------
-            # 🚀 TÁI TẠO ĐẶC TRƯNG XUNG ĐỘT (SP vs PV) VÀ LAG5 TRÊN RUNTIME
+            #  RECREATE CONFLICT FEATURES (SP vs PV) AND LAG5 AT RUNTIME
             # ---------------------------------------------------------
             pv_cols = [c for c in buffer_df_t2.columns if 'PV' in c]
             for pv_col in pv_cols:
                 sp_col = pv_col.replace('PV', 'SP')
                 if sp_col in buffer_df_t2.columns:
                     err_col = pv_col.replace('PV', 'SP_PV_Delta')
-                    # Tính sai số tức thời
+                    # Calculate immediate error
                     pv_val = pd.to_numeric(buffer_df_t2[pv_col], errors='coerce').fillna(0)
                     sp_val = pd.to_numeric(buffer_df_t2[sp_col], errors='coerce').fillna(0)
                     buffer_df_t2[err_col] = pv_val - sp_val
                     
-                    # Tính độ biến động tích lũy (volatility) trong buffer
+                    # Calculate cumulative volatility in buffer
                     buffer_df_t2[f'{err_col}_volatility'] = buffer_df_t2[err_col].rolling(window=15, min_periods=1).std().fillna(0)
                 
-                # Tính đặc trưng Time-lagged (kéo lùi 5 bước nếu đủ dữ liệu)
+                # Calculate Time-lagged feature (shift back 5 steps if enough data)
                 lag5_col = f"{pv_col}_lag5"
-                buffer_df_t2[lag5_col] = buffer_df_t2[pv_col].shift(5).bfill()
+                buffer_df_t2[lag5_col] = buffer_df_t2[pv_col].shift(5).bfill().fillna(buffer_df_t2[pv_col])
 
-            # Lặp qua từng máy để gom chỉ báo rủi ro
+            # Loop through each machine to aggregate risk indicators
             for machine, lgb_model in server.m2_lgbs.items():
                 config = server.task2_features.get(machine, {})
                 features = config.get("features", [])
@@ -556,7 +617,7 @@ def main():
                 
                 if not features: continue
 
-                # 2. TÍNH TOÁN CÁC FEATURES cho máy này
+                # 2. CALCULATE FEATURES for this machine
                 base_features = [f for f in features if f != 'IF_Anomaly_Score']
                 X_t2 = FeatureEngineer.compute_for_buffer(buffer_df_t2, base_features)
                 
@@ -576,7 +637,7 @@ def main():
                 else:
                     X_t2['IF_Anomaly_Score'] = 0.0
 
-                # SỬA LỖI 3: Tránh duplicate tên cột
+                # FIX 3: Prevent column name duplicates
                 if 'IF_Anomaly_Score' not in features:
                     features_ordered = features + ['IF_Anomaly_Score']
                 else:
@@ -587,53 +648,82 @@ def main():
                 p_dt_vec = lgb_model.predict_proba(X_t2)[0]
                 raw_risk = float(p_dt_vec[1]) if len(p_dt_vec) > 1 else float(p_dt_vec[0])
                 
-                # =========================================================
-                # 🚀 UI PROBABILITY CALIBRATION (HIỆU CHUẨN XÁC SUẤT)
-                # Dịch xác suất thô (rất nhỏ) của ML sang thang điểm 0-100% của UI
-                # =========================================================
+                """
+                OOD DETECTION (OUT-OF-DISTRIBUTION) VETO POWER
+                Grant Veto Power to Isolation Forest if data is extremely anomalous.
+                When pressure reaches extreme values, LightGBM extrapolation fails (low raw_risk).
+                IF high anomaly_score automatically rescues the system.
+                """
+                is_extreme_anomaly = local_iso_anomaly and (anomaly_score > 0.12)
+                
+                """ EXPERT RULE (ABSOLUTE OVERRIDE)
+                Move the overflow rule outside the anomaly check to give it absolute priority over AI. """
+                force_extract_overflow = False
+                force_tfe_shutdown = False
+
+                if machine == "TFE":
+                    try:
+                        col_name = 'Extract_tank_Level'
+                        if 'Extract_tank_Level_PV' in buffer_df_t2.columns:
+                            col_name = 'Extract_tank_Level_PV'
+                        extract_level = float(buffer_df_t2[col_name].iloc[-1]) if col_name in buffer_df_t2.columns else 0.0
+                        
+                        if extract_level > 95.0:
+                            force_extract_overflow = True
+                            local_iso_anomaly = True  # Force AI to trigger an alarm
+                            is_extreme_anomaly = True # Force red warning
+                            
+                        # Rule 2: TFE Overpressure / Vacuum Loss
+                        tfe_steam_pv = float(buffer_df_t2['TFE_Steam_pressure_PV'].iloc[-1]) if 'TFE_Steam_pressure_PV' in buffer_df_t2.columns else 120.0
+                        tfe_vac_pv = float(buffer_df_t2['TFE_Vacuum_pressure_PV'].iloc[-1]) if 'TFE_Vacuum_pressure_PV' in buffer_df_t2.columns else -65.0
+                        
+                        if tfe_steam_pv > 140.0 or tfe_vac_pv > -10.0:
+                            force_tfe_shutdown = True
+                            local_iso_anomaly = True  
+                            is_extreme_anomaly = True 
+
+                    except Exception:
+                        pass
+                
                 calibrated_risk = 0.0
-                if local_iso_anomaly and raw_risk >= stage1_thresh:
-                    # NGUY HIỂM: Vượt ngưỡng -> Scale lên vùng 85% - 99% để UI chớp đỏ
-                    calibrated_risk = 0.85 + ((raw_risk - stage1_thresh) / (1.0 - stage1_thresh)) * 0.14
+                if local_iso_anomaly and (raw_risk >= stage1_thresh or is_extreme_anomaly):
+                    calibrated_risk = 0.85 + min(abs(anomaly_score), 0.14)
+                    
+                    # If it is an overflow error, lock risk at 99%
+                    if force_extract_overflow or force_tfe_shutdown:
+                        calibrated_risk = 0.99
                 else:
-                    # AN TOÀN: Scale lùi về vùng 0% - 40% để UI báo an toàn
                     if stage1_thresh > 0:
                         calibrated_risk = (raw_risk / stage1_thresh) * 0.40
                 
                 if calibrated_risk > p_dt_risk:
                     p_dt_risk = calibrated_risk
                     
-                # HARD RULE BTRỢ ĐỘC LẬP CHO EXTRACT TANK
-                if machine == "TFE":
-                    try:
-                        col_name = 'Extract_tank_Level'
-                        if 'Extract_tank_Level_PV' in buffer_df_t2.columns:
-                            col_name = 'Extract_tank_Level_PV'
-                        
-                        extract_level = float(buffer_df_t2[col_name].iloc[-1]) if col_name in buffer_df_t2.columns else 0.0
-                        
-                        if extract_level > 95.0:
-                            # Bypass cả AI models, set cứng flag nguy hiểm
-                            p_dt_risk = max(p_dt_risk, 0.99)
-                            pred_dt_classes.append("EXTRACT_TANK_OVERFLOW_CRITICAL")
-                            local_iso_anomaly = True # ép đỏ UI
-                            raw_risk = 1.0 # ép đỏ UI
-                    except Exception:
-                        pass
-
-                # Hợp nhất logic Threshold + Isolation Forest để tìm nguyên nhân
-                if local_iso_anomaly and raw_risk >= stage1_thresh:
-                    # Nếu có Stage 2 Model thì dùng để rẽ nhánh Root Cause
+                """ Merge logic for determining Root Cause """
+                if local_iso_anomaly and (raw_risk >= stage1_thresh or is_extreme_anomaly):
                     s2_lgb = server.m2_stage2_lgbs.get(machine)
                     s2_enc = server.m2_stage2_encoders.get(machine)
+                    
                     if s2_lgb is not None and s2_enc is not None:
                         pred_enc = s2_lgb.predict(X_t2)[0]
                         pred_cause = s2_enc.inverse_transform([pred_enc])[0]
                         
-                        if "EXTRACT_TANK_OVERFLOW_CRITICAL" not in pred_dt_classes:
+                        # Assign critical error name
+                        if force_extract_overflow:
+                            pred_cause = "EXTRACT_TANK_OVERFLOW_CRITICAL"
+                        elif force_tfe_shutdown:
+                            pred_cause = "TFE_Shutdown"
+                                
+                        if "EXTRACT_TANK_OVERFLOW_CRITICAL" not in pred_dt_classes and pred_cause not in pred_dt_classes:
                             pred_dt_classes.append(pred_cause)
                     else:
-                        if "EXTRACT_TANK_OVERFLOW_CRITICAL" not in pred_dt_classes:
+                        if force_extract_overflow:
+                            if "EXTRACT_TANK_OVERFLOW_CRITICAL" not in pred_dt_classes:
+                                pred_dt_classes.append("EXTRACT_TANK_OVERFLOW_CRITICAL")
+                        elif force_tfe_shutdown:
+                            if "TFE_Shutdown" not in pred_dt_classes:
+                                pred_dt_classes.append("TFE_Shutdown")
+                        elif stage2_fallback not in pred_dt_classes:
                             pred_dt_classes.append(stage2_fallback)
 
         if not pred_dt_classes:
@@ -643,7 +733,7 @@ def main():
         # -------------------------------------------------------------
         # PRESCRIPTIVE ENGINE (Recommendations)
         # -------------------------------------------------------------
-        rec_sp, rec_p_good, rec_p_dt, review_flag = server.optimize_sp(buffer_df, part, p_good)
+        rec_sp, rec_p_good, rec_p_dt, review_flag = server.optimize_sp(buffer_df, part, p_good, p_dt_risk)
 
         response = {
             "recommendedSP": rec_sp,

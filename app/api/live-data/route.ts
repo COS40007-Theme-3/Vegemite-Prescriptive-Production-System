@@ -43,15 +43,48 @@ function loadData() {
 
   const all = [...good, ...lowBad, ...highBad]
 
-  // Sort by "Set Time" ascending
-  all.sort((a, b) => {
-    const ta = String(a['Set Time'] ?? '')
-    const tb = String(b['Set Time'] ?? '')
-    return ta.localeCompare(tb)
+  const parseDate = (dStr: string) => {
+    if (!dStr) return 0
+    const parts = dStr.split(' ')
+    if (parts.length < 2) return 0
+    const [day, month, year] = parts[0].split('/')
+    const [hour, minute] = parts[1].split(':')
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute)
+    ).getTime()
+  }
+
+  // 1. Group rows by VYP batch to keep them strictly contiguous
+  const batches = new Map<string, typeof all>()
+  for (const row of all) {
+    const bId = String(row['VYP batch'] ?? 'unknown_batch')
+    if (!batches.has(bId)) {
+      batches.set(bId, [])
+    }
+    batches.get(bId)!.push(row)
+  }
+
+  // 2. Sort the batches themselves by their first row's timestamp
+  const sortedBatches = Array.from(batches.values()).sort((batchA, batchB) => {
+    const timeA = parseDate(String(batchA[0]['Set Time'] ?? ''))
+    const timeB = parseDate(String(batchB[0]['Set Time'] ?? ''))
+    return timeA - timeB
   })
 
-  cachedRows = all
-  console.log(`[live-data] Loaded ${all.length} rows from CSV`)
+  // 3. Re-flatten into a continuous sorted array
+  const finalSorted: typeof all = []
+  for (const b of sortedBatches) {
+    // Sort rows within the batch chronologically just in case
+    b.sort((rowA, rowB) => parseDate(String(rowA['Set Time'] ?? '')) - parseDate(String(rowB['Set Time'] ?? '')))
+    finalSorted.push(...b)
+  }
+
+  cachedRows = finalSorted
+  console.log(`[live-data] Loaded ${cachedRows.length} rows from CSV`)
   return cachedRows
 }
 
@@ -66,9 +99,30 @@ const CRITICAL_DRIVERS: Record<string, string[]> = {
 export async function GET() {
   try {
     const rows = loadData()
-    const STEP = 100  // advance 100 rows per tick for faster demo cycling
-    const row = rows[cursor % rows.length]
+    const STEP = 80  // advance 80 rows per tick to finish batch in ~5s (2s/tick)
+    
+    // Safety check just in case cursor is way out
+    if (cursor >= rows.length) cursor = 0
+      
+    const row = rows[cursor]
+    
+    // Find batch bounds for progress bar
+    const currentBatchId = row['VYP batch']
+    let batchStart = cursor
+    while (batchStart > 0 && rows[batchStart - 1]['VYP batch'] === currentBatchId) {
+      batchStart--
+    }
+    let batchEnd = cursor
+    while (batchEnd < rows.length - 1 && rows[batchEnd + 1]['VYP batch'] === currentBatchId) {
+      batchEnd++
+    }
+    
+    // Calculate exact row numbers instead of fractional steps
+    const batchTotal = batchEnd - batchStart + 1
+    const batchCursor = Math.min(batchTotal, cursor - batchStart + STEP)
+    
     cursor += STEP
+    if (cursor >= rows.length) cursor = 0 // loop organically
 
     // Build SP inputs (camelCase keys)
     const sp: Record<string, number | string> = {}
@@ -102,6 +156,8 @@ export async function GET() {
     return NextResponse.json({
       cursor,
       total: rows.length,
+      batchCursor,
+      batchTotal,
       timestamp: row['Set Time'],
       part,
       sp,
@@ -120,4 +176,23 @@ export async function GET() {
 export async function DELETE() {
   cursor = 0
   return NextResponse.json({ ok: true })
+}
+
+export async function POST(req: Request) {
+  try {
+    const { action } = await req.json()
+    if (action === 'skip-to-next-batch') {
+      const rows = loadData()
+      if (cursor >= rows.length) return NextResponse.json({ ok: true })
+      const currentBatchId = rows[cursor]['VYP batch']
+      while (cursor < rows.length && rows[cursor]['VYP batch'] === currentBatchId) {
+        cursor++
+      }
+      if (cursor >= rows.length) cursor = 0
+      return NextResponse.json({ ok: true })
+    }
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
 }

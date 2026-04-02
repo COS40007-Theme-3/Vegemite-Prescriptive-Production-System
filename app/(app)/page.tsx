@@ -89,17 +89,25 @@ export default function DashboardPage() {
   async function handleSetInputs(newInputs: AllSPInputs) {
     setInputs(newInputs)
     setIsManualMode(false)
-    // Pass last known sensors
-    await infer(newInputs)
+    // Pass last known sensors + override extractTankLevel
+    const sensors = { ...liveRow?.sensors }
+    if (newInputs.extractTankLevel !== undefined) {
+      sensors['Extract tank Level'] = newInputs.extractTankLevel
+    }
+    await infer(newInputs, sensors)
   }
 
   // Apply recommended SPs
   async function handleApplyRecommended() {
     if (!result || !inputs) return
-    const sp: AllSPInputs = { ...result.recommendedSP, part: inputs.part }
+    const sp: AllSPInputs = { ...result.recommendedSP, part: inputs.part, extractTankLevel: inputs.extractTankLevel }
     setInputs(sp)
-    // Pass last known sensors
-    await infer(sp)
+    // Pass last known sensors + override extractTankLevel
+    const sensors = { ...liveRow?.sensors }
+    if (inputs.extractTankLevel !== undefined) {
+      sensors['Extract tank Level'] = inputs.extractTankLevel
+    }
+    await infer(sp, sensors)
   }
 
   // Live loop: fetch next CSV row every 5s, run inference on real data
@@ -109,7 +117,7 @@ export default function DashboardPage() {
       try {
         const row = await fetchLiveRow()
         setLiveRow(row)
-        const sp: AllSPInputs = { ...row.sp, part: row.part }
+        const sp: AllSPInputs = { ...row.sp, part: row.part, extractTankLevel: row.sensors['Extract tank Level'] ?? 65 }
         setInputs(sp)
         await infer(sp, row.sensors)
       } catch (e) {
@@ -126,7 +134,7 @@ export default function DashboardPage() {
   const currentInputs: AllSPInputs = inputs ?? {
     ffteFeedSolidsSP: 50, ffteProductionSolidsSP: 41.5, ffteSteamPressureSP: 113,
     tfeOutFlowSP: 2400, tfeProductionSolidsSP: 65, tfeVacuumPressureSP: -68,
-    tfeSteamPressureSP: 119, part: 'Yeast - BRD',
+    tfeSteamPressureSP: 119, part: 'Yeast - BRD', extractTankLevel: liveRow?.sensors['Extract tank Level'] ?? 65,
   }
 
   const recommendations = Object.fromEntries(

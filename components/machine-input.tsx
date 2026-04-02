@@ -25,6 +25,7 @@ export type AllSPInputs = {
   tfeVacuumPressureSP: number
   tfeSteamPressureSP: number
   part: string
+  extractTankLevel?: number
 }
 
 export type RecommendSpResult = {
@@ -47,7 +48,7 @@ export interface MachineInputProps {
 
 const PARTS = ['Yeast - BRD', 'Yeast - BRN', 'Yeast - FMX']
 
-const FIELDS: { key: keyof Omit<AllSPInputs, 'part'>; label: string; unit: string }[] = [
+const FIELDS: { key: keyof Omit<AllSPInputs, 'part'>; label: string; unit: string; highlight?: boolean }[] = [
   { key: 'ffteFeedSolidsSP',       label: 'FFTE Feed Solids SP',       unit: '%' },
   { key: 'ffteProductionSolidsSP', label: 'FFTE Production Solids SP', unit: '%' },
   { key: 'ffteSteamPressureSP',    label: 'FFTE Steam Pressure SP',    unit: 'kPa' },
@@ -55,6 +56,7 @@ const FIELDS: { key: keyof Omit<AllSPInputs, 'part'>; label: string; unit: strin
   { key: 'tfeProductionSolidsSP',  label: 'TFE Production Solids SP',  unit: '%' },
   { key: 'tfeVacuumPressureSP',    label: 'TFE Vacuum Pressure SP',    unit: 'kPa' },
   { key: 'tfeSteamPressureSP',     label: 'TFE Steam Pressure SP',     unit: 'kPa' },
+  { key: 'extractTankLevel',       label: 'Extract Tank Level',       unit: '%', highlight: true },
 ]
 
 const STATE_CONFIG: Record<string, { label: string, variant: 'default' | 'secondary' | 'destructive' | 'outline', dot: string }> = {
@@ -157,25 +159,25 @@ export function MachineInput({
 
 
         {/* SP fields — 2-col grid */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
-          {FIELDS.map(({ key, label, unit }) => (
-            <div key={key} className="flex flex-col gap-1 rounded-lg border bg-muted/40 p-2.5">
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+          {FIELDS.map(({ key, label, unit, highlight }) => (
+            <div key={key} className={`flex flex-col gap-1 rounded-lg border p-2.5 ${highlight ? 'bg-red-500/10 border-red-500/30' : 'bg-muted/40'}`}>
+              <span className={`text-[9px] font-semibold uppercase tracking-wider leading-tight ${highlight ? 'text-red-600' : 'text-muted-foreground'}`}>
                 {label}
               </span>
               <div className="flex items-baseline gap-1">
                 {isManualMode ? (
                   <Input
                     type="number"
-                    value={localInputs[key]}
+                    value={localInputs[key] ?? 0}
                     onChange={(e) => handleInputChange(key, e.target.value)}
                     onBlur={() => handleBlur(key)}
                     step="0.1"
-                    className="h-7 w-full text-base font-bold tabular-nums tracking-tight bg-background px-1.5"
+                    className={`h-7 w-full text-base font-bold tabular-nums tracking-tight bg-background px-1.5 ${highlight ? 'text-red-700' : ''}`}
                   />
                 ) : (
-                  <span className="text-lg font-bold tabular-nums tracking-tight">
-                    {(inputs[key] as number).toFixed(1)}
+                  <span className={`text-lg font-bold tabular-nums tracking-tight ${highlight ? 'text-red-600' : ''}`}>
+                    {(inputs[key] !== undefined ? inputs[key] as number : 0).toFixed(1)}
                   </span>
                 )}
                 <span className="text-[10px] font-medium text-muted-foreground">{unit}</span>
@@ -187,7 +189,7 @@ export function MachineInput({
         <Separator />
 
         {/* Action buttons row */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isManualMode ? (
             <>
               <Button size="sm" onClick={handleApply} disabled={isApplying} className="h-8 text-xs min-w-[100px] transition-all">
@@ -218,7 +220,7 @@ export function MachineInput({
               Use Recommended
             </Button>
           )}
-          <p className="ml-auto text-[10px] text-muted-foreground">
+          <p className="ml-auto hidden sm:block text-[10px] text-muted-foreground">
             {isManualMode ? 'Editing — apply to run inference' : 'Live setpoints from sensors'}
           </p>
         </div>

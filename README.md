@@ -59,36 +59,62 @@ The current iteration of the system includes:
 
 ### Prerequisites
 
-- Node.js 18.x or later
-- Python 3.9 or later
-- npm or pnpm
+- **Node.js** (v18.x or later)
+- **pnpm** (Package manager used for this project)
+- **Python** (v3.9 or later)
 
-### Installation
+### 1. Setup Python Environment (Backend / Machine Learning)
 
-1. Clone the repository:
-   ```bash
-   git clone [repository-url]
-   ```
-
-2. Install frontend dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Install Python requirements (if applicable):
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Development
-
-To start the development server:
+The project relies on a Python script (`models/serve_recommend_sp.py`) acting as the AI engine behind Next.js API routes. You must set up a virtual environment and keep it active or configured so the Node app can call it.
 
 ```bash
-npm run dev
+# Navigate to the project directory
+cd Vegemite-Prescriptive-Production-System
+
+# Create a virtual environment named "venv"
+python -m venv venv
+
+# Activate the virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+
+# Install required ML libraries
+pip install pandas numpy scikit-learn lightgbm joblib
 ```
 
-The application will be available at `http://localhost:3000`.
+### 2. Setup Next.js Environment (Frontend & API)
+
+Open a terminal (ensure you are still in the project root) and install the Node.js frontend dependencies using `pnpm`:
+
+```bash
+# Install Node.js dependencies
+pnpm install
+```
+
+### 3. Run the Fullstack Application
+
+Because Next.js handles both the Frontend UI and Backend API routes, you don't even need to start the Python ML file manually. The API will spawn the Python models under the hood.
+
+Make sure your Python virtual environment is activated before running the project:
+
+```bash
+pnpm dev
+```
+
+The application will be available at [http://localhost:3000](http://localhost:3000). 
+- **Frontend** runs on React + Next.js App Router.
+- **Backend APIs** (`/api/recommend-sp`, `/api/data`) reside in the `app/api/` folder and trigger the `models/serve_recommend_sp.py` script automatically to serve predictions!
+
+### (Optional) Testing Python Model directly
+If you want to debug or test the machine learning model independent from the Next.js UI, you can run the python script standalone:
+
+```bash
+# Still within your virtual environment
+python models/serve_recommend_sp.py
+```
+*Note: The script expects a JSON input via stdin to run a test prediction.*
 
 ## Technology Stack
 

@@ -71,15 +71,15 @@ export default function DataPage() {
   }, [dataset])
 
   return (
-    <main className="flex h-full flex-col gap-4 overflow-hidden p-4 lg:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <main className="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">Data</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Inspect production, Infinity and weekly CSV feeds behind the models.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-muted-foreground">Dataset</span>
           <Select value={dataset} onValueChange={(v) => setDataset(v as DatasetId)}>
             <SelectTrigger className="h-8 w-[260px] text-xs">
@@ -96,8 +96,8 @@ export default function DataPage() {
         </div>
       </div>
 
-      <Card className="flex min-h-0 flex-1 flex-col">
-        <CardHeader className="p-4 pb-2">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border">
+        <CardHeader className="shrink-0 p-4 pb-2">
           <CardTitle className="text-sm font-semibold tracking-tight">
             {DATASETS.find((d) => d.id === dataset)?.label ?? 'Dataset'}
           </CardTitle>
@@ -105,7 +105,7 @@ export default function DataPage() {
             Showing up to 200 rows. Use this view to understand raw inputs to the Vegemite models.
           </CardDescription>
         </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-auto p-0">
+        <CardContent className="min-h-0 flex-1 overflow-hidden p-0 relative">
           {error ? (
             <div className="p-4 text-xs text-destructive">{error}</div>
           ) : loading || !data ? (
@@ -113,32 +113,33 @@ export default function DataPage() {
           ) : data.rows.length === 0 ? (
             <div className="p-4 text-xs text-muted-foreground">No rows found in this dataset.</div>
           ) : (
-            <Table className="w-max">
-              <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
-                <TableRow>
-                  {data.columns.map((col) => (
-                    <TableHead key={col} className="whitespace-nowrap">
-                      {col}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.rows.map((row, idx) => (
-                  <TableRow key={idx} className="hover:bg-muted/40">
-                    {row.map((cell, i) => (
-                      <TableCell key={i} className="whitespace-nowrap text-xs tabular-nums">
-                        {cell}
-                      </TableCell>
+            <div className="absolute inset-0 overflow-auto">
+              <Table className="w-max border-separate border-spacing-0">
+                <TableHeader className="sticky top-0 z-10 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+                  <TableRow>
+                    {data.columns.map((col) => (
+                      <TableHead key={col} className="h-11 whitespace-nowrap bg-card px-4 border-b text-xs">
+                        {col}
+                      </TableHead>
                     ))}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {data.rows.map((row, idx) => (
+                    <TableRow key={idx} className="hover:bg-muted/40">
+                      {row.map((cell, i) => (
+                        <TableCell key={i} className="whitespace-nowrap px-4 py-4 text-xs tabular-nums">
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
     </main>
   )
 }
-
